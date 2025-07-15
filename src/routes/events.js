@@ -1,11 +1,15 @@
 const express = require("express");
 const eventRouter = express.Router();
 const db = require("../config/database");
-const { parse } = require("dotenv");
 
+//Creating api for creating new user
 eventRouter.post("/create/user", async(req,res)=>{
     try{
         const {name,email} = req.body;
+
+        if(!name || !email){
+            return res.status(400).json({error: "Name and Email is Required"})
+        }
 
         const isUser = await db.query(
             `SELECT * FROM users WHERE email = $1`,
@@ -13,7 +17,7 @@ eventRouter.post("/create/user", async(req,res)=>{
         );
 
         if(isUser.rows.length>0){
-            res.status(400).json({error:"User already exists"})
+          return  res.status(400).json({error:"User already exists"})
         }
 
         const data = await db.query(
@@ -21,15 +25,21 @@ eventRouter.post("/create/user", async(req,res)=>{
         [name,email]
         );
 
-        res.status(200).json({message: "User created", User_Id:data.rows[0].id});
+        res.status(201).json({message: "User created", User_Id:data.rows[0].id});
 
     }catch(err){
-        res.status(404).json({error : "User not created"});
+        res.status(500).json({error : "User not created"});
     }
 })
+
+//Creating api for creating new Event
 eventRouter.post("/create/event", async(req,res)=>{
     try{
         const {title,datetime,location,capacity} = req.body;
+
+        if(!title || !datetime || !location || !capacity){
+            return res.status(400).json({error: "tile, datetime, location and capacity all required"})
+        }
 
         if(!(capacity>0 && capacity <= 1000)){
             return res.status(400).json({error:"Capacity is between 0 to 1000"});
@@ -40,12 +50,31 @@ eventRouter.post("/create/event", async(req,res)=>{
         [title,datetime,location,capacity]
         );
 
-        res.status(200).json({message: " Events created", data: "Event Id is "+data.rows[0].id});
+        res.status(201).json({message: " Events created", data:data.rows[0].id});
 
     }catch(err){
-        res.status(404).json({error : "Event not created"});
+        res.status(500).json({error : "Event not created"});
     }
 })
+
+//Creating api for fetching all upcoming  events
+eventRouter.get("/event/upcoming", async(req,res)=>{
+    try{
+        const events = await db.query(
+            `SELECT * FROM events WHERE datetime>$1 ORDER BY datetime ASC, location ASC`,[new Date()]
+        )
+
+        if(events.rows.length === 0){
+            return res.status(400).json({error:"No any upcoming events"})
+        }
+        res.status(200).json({message:"Upcoming events",data : events.rows})
+
+    }catch(err){
+        res.status(500).json({error : err.message});
+    }
+})
+
+//Creating api for getting events Details
 eventRouter.get("/event/:eventId", async(req,res)=>{
     try{
         const {eventId} = req.params;
@@ -66,15 +95,16 @@ eventRouter.get("/event/:eventId", async(req,res)=>{
         const numberOfRegisterdUser = registeredUser.rows.length === 0? 0: registeredUser.rows.length;
 
         res.status(200).json({message: " Events found",
-             event: eventData.rows,
+             event: eventData.rows[0],
              RegisteredUser :numberOfRegisterdUser
         });
 
     }catch(err){
-        res.status(404).json({error : "Event not found"});
+        res.status(500).json({error : "Event not found"});
     }
-})
+}) 
 
+//Creating api for register user for any events
 eventRouter.post("/event/:eventId/register", async(req,res)=>{
     try{
         const userId = req.body.id;
@@ -133,6 +163,7 @@ eventRouter.post("/event/:eventId/register", async(req,res)=>{
     }
 })
 
+//Creating api for cancle registered events
 eventRouter.delete("/event/:eventId/cancle", async(req,res)=>{
     try{
         const userId = req.body.id;
@@ -168,6 +199,37 @@ eventRouter.delete("/event/:eventId/cancle", async(req,res)=>{
     }
 })
 
+//Creating api for fetching all statistics of events
+eventRouter.get("/event/:eventId/stats", async(req,res)=>{
+    try{
+        const {eventId} = req.params;
 
+        const eventData = await db.query(
+            `SELECT capacity FROM events WHERE id=$1`,[eventId]
+        )
+
+        if(eventData.rows.length ===0){
+            return res.status(404).json({error:"Event not found"});
+        }
+
+        const eventRegistration = await db.query(
+            `SELECT COUNT(*) AS count FROM registrations WHERE event_id=$1`,[eventId]
+        )
+    
+        const totalRegisteration = parseInt(eventRegistration.rows[0].count);
+        const CapacityOfEvent = parseInt(eventData.rows[0].capacity);
+        const remaingCapacity = CapacityOfEvent - totalRegisteration;
+        const percentageCapUsed = ((totalRegisteration*100)/CapacityOfEvent).toFixed(2);
+        
+        res.status(200).json({message:"Event stats : ",
+            TotalRegistrations : totalRegisteration,
+            RemainingCapacity : remaingCapacity,
+            PercentageCapacityUsed : `${percentageCapUsed}%`
+        })
+
+    }catch(err){
+        res.status(500).json({error : err.message});
+    }
+})
 
 module.exports = {eventRouter};
